@@ -43,14 +43,9 @@ body {
 }
 
 .brand {
-  display: flex;
-  align-items: center;
-}
-
-.brand img {
-  height: 38px;
-  width: auto;
-  display: block;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--accent-strong);
 }
 
 .nav {
