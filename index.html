@@ -26,14 +26,24 @@
       </div>
       <div class="grid two-col">
         <div class="card">
-          <h3>Cash Snapshot</h3>
+          <div class="card-header">
+            <h3>Cash Snapshot</h3>
+            <div class="pill pill-positive">Updated</div>
+          </div>
           <div class="stat" id="overview-cash">Loading…</div>
           <p class="caption">Based on last 90 days of inflows and outflows.</p>
         </div>
         <div class="card">
-          <h3>Margin Trend</h3>
-          <div class="spark" id="overview-margin"></div>
-          <p class="caption">Simple sparkline of gross margin over time.</p>
+          <div class="card-header">
+            <h3>Margin Trend</h3>
+            <div class="toggle-group" id="overview-toggle">
+              <button class="toggle active" data-period="day">Day</button>
+              <button class="toggle" data-period="week">Week</button>
+              <button class="toggle" data-period="month">Month</button>
+            </div>
+          </div>
+          <div class="chart" id="overview-margin"></div>
+          <p class="caption">Gross margin over time with selectable windows.</p>
         </div>
       </div>
     </section>
@@ -45,7 +55,14 @@
       </div>
       <div class="grid two-col">
         <div class="card">
-          <h3>Monthly Revenue</h3>
+          <div class="card-header">
+            <h3>Revenue Trend</h3>
+            <div class="toggle-group" id="revenue-toggle">
+              <button class="toggle active" data-period="day">Day</button>
+              <button class="toggle" data-period="week">Week</button>
+              <button class="toggle" data-period="month">Month</button>
+            </div>
+          </div>
           <div class="chart" id="revenue-chart"></div>
         </div>
         <div class="card">
@@ -62,7 +79,14 @@
       </div>
       <div class="grid two-col">
         <div class="card">
-          <h3>Expense by Category</h3>
+          <div class="card-header">
+            <h3>Expense by Category</h3>
+            <div class="toggle-group" id="expense-toggle">
+              <button class="toggle active" data-period="day">Day</button>
+              <button class="toggle" data-period="week">Week</button>
+              <button class="toggle" data-period="month">Month</button>
+            </div>
+          </div>
           <div class="chart" id="expense-chart"></div>
         </div>
         <div class="card">
@@ -108,7 +132,14 @@
           <ul class="list" id="optimize-list"></ul>
         </div>
         <div class="card">
-          <h3>Capacity & Utilization</h3>
+          <div class="card-header">
+            <h3>Capacity & Utilization</h3>
+            <div class="toggle-group" id="optimize-toggle">
+              <button class="toggle active" data-period="day">Day</button>
+              <button class="toggle" data-period="week">Week</button>
+              <button class="toggle" data-period="month">Month</button>
+            </div>
+          </div>
           <div class="chart" id="optimize-chart"></div>
         </div>
       </div>
