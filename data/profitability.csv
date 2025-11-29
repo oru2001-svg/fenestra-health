@@ -1,0 +1,9 @@
+view,name,revenue,expense
+procedure,Annual Wellness Visit,42000,18000
+procedure,Joint Injection,58000,24000
+procedure,Cardiac Stress Test,72000,32000
+procedure,Telehealth Follow-up,36000,12000
+physician,Dr. Lee,88000,42000
+physician,Dr. Rivera,76000,33000
+physician,Nurse Practitioners,52000,21000
+physician,Allied Health,46000,19500

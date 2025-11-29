@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Practice Performance Console</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Fenestra Practice Console</div>
+    <nav class="nav">
+      <button class="nav-link active" data-target="overview">Overview</button>
+      <button class="nav-link" data-target="revenue">Revenue</button>
+      <button class="nav-link" data-target="expense">Expense</button>
+      <button class="nav-link" data-target="profitability">Profitability</button>
+      <button class="nav-link" data-target="optimize">Optimize</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="overview" class="panel visible">
+      <div class="panel-header">
+        <h1>Overview</h1>
+        <p class="lede">Your practice is healthy: revenue up 8% month over month while expenses held flat.</p>
+      </div>
+      <div class="grid two-col">
+        <div class="card">
+          <h3>Cash Snapshot</h3>
+          <div class="stat" id="overview-cash">Loading…</div>
+          <p class="caption">Based on last 90 days of inflows and outflows.</p>
+        </div>
+        <div class="card">
+          <h3>Margin Trend</h3>
+          <div class="spark" id="overview-margin"></div>
+          <p class="caption">Simple sparkline of gross margin over time.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="revenue" class="panel">
+      <div class="panel-header">
+        <h1>Revenue</h1>
+        <p class="lede">Claims and capitation remain stable; claims accelerated after mid-quarter.</p>
+      </div>
+      <div class="grid two-col">
+        <div class="card">
+          <h3>Monthly Revenue</h3>
+          <div class="chart" id="revenue-chart"></div>
+        </div>
+        <div class="card">
+          <h3>Mix</h3>
+          <ul class="list" id="revenue-mix"></ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="expense" class="panel">
+      <div class="panel-header">
+        <h1>Expense</h1>
+        <p class="lede">Expenses are steady; payroll is the largest lever, supplies rising modestly.</p>
+      </div>
+      <div class="grid two-col">
+        <div class="card">
+          <h3>Expense by Category</h3>
+          <div class="chart" id="expense-chart"></div>
+        </div>
+        <div class="card">
+          <h3>Run Rate</h3>
+          <div class="stat" id="expense-runrate">Loading…</div>
+          <p class="caption">Projected monthly run rate across four key categories.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="profitability" class="panel">
+      <div class="panel-header">
+        <h1>Profitability</h1>
+        <p class="lede">Procedures and providers show consistent profitability; toggle to compare views.</p>
+      </div>
+      <div class="controls">
+        <button id="toggle-view" class="ghost">View by Physician</button>
+      </div>
+      <div class="card">
+        <h3 id="profitability-title">Profitability by Procedure</h3>
+        <table class="table" id="profitability-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Revenue</th>
+              <th>Expense</th>
+              <th>Margin</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="optimize" class="panel">
+      <div class="panel-header">
+        <h1>Optimize</h1>
+        <p class="lede">Focus growth on the highest return moves: more premium procedures and schedule density.</p>
+      </div>
+      <div class="grid two-col">
+        <div class="card">
+          <h3>Growth Ideas</h3>
+          <ul class="list" id="optimize-list"></ul>
+        </div>
+        <div class="card">
+          <h3>Capacity & Utilization</h3>
+          <div class="chart" id="optimize-chart"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
