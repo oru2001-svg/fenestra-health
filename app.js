@@ -62,16 +62,25 @@ function startOfMonth(date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
-function periodRange(period) {
-  const now = new Date();
-  const config = periodConfig[period];
-  if (period === 'month') {
-    const start = new Date(now.getFullYear(), now.getMonth() - config.monthsBack, 1);
+function periodRange(period, dataDates = []) {
+  const dates = dataDates.filter((d) => !Number.isNaN(d?.getTime?.()));
+  if (!dates.length) {
+    const now = new Date();
+    const config = periodConfig[period];
+    if (period === 'month') {
+      const start = new Date(now.getFullYear(), now.getMonth() - config.monthsBack, 1);
+      return { start, end: now };
+    }
+    const span = config.spanDays;
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - span);
     return { start, end: now };
   }
-  const span = config.spanDays;
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - span);
-  return { start, end: now };
+
+  const minDate = new Date(Math.min(...dates.map((d) => d.getTime())));
+  const maxDate = new Date(Math.max(...dates.map((d) => d.getTime())));
+  const start = bucketStart(minDate, period);
+  const end = bucketStart(maxDate, period);
+  return { start, end };
 }
 
 function bucketStart(date, period) {
@@ -93,7 +102,13 @@ function formatLabel(period, date) {
 }
 
 function aggregateSeries(data, { period, dateKey = 'date', valueKey = 'value', seriesKey = 'series' }) {
-  const { start, end } = periodRange(period);
+  const parsed = data
+    .map((row) => ({ ...row, _date: new Date(row[dateKey]) }))
+    .filter((row) => !Number.isNaN(row._date.getTime()));
+  const { start, end } = periodRange(
+    period,
+    parsed.map((row) => row._date)
+  );
   const buckets = [];
   let cursor = bucketStart(start, period);
   while (cursor <= end) {
@@ -102,11 +117,11 @@ function aggregateSeries(data, { period, dateKey = 'date', valueKey = 'value', s
   }
 
   const bucketIndex = new Map(buckets.map((b, i) => [b.toISOString(), i]));
-  const seriesNames = Array.from(new Set(data.map((d) => d[seriesKey] || 'Value')));
+  const seriesNames = Array.from(new Set(parsed.map((d) => d[seriesKey] || 'Value')));
   const seriesData = Object.fromEntries(seriesNames.map((name) => [name, Array(buckets.length).fill(0)]));
 
-  data.forEach((row) => {
-    const date = new Date(row[dateKey]);
+  parsed.forEach((row) => {
+    const date = row._date;
     if (date < start || date > end) return;
     const key = bucketStart(date, period).toISOString();
     const idx = bucketIndex.get(key);
@@ -488,8 +503,17 @@ function buildMarginRows() {
   }));
 }
 
+function latestDataDate() {
+  const dates = [
+    ...revenueData.map((r) => new Date(r.date)),
+    ...expenseData.map((e) => new Date(e.date)),
+  ].filter((d) => !Number.isNaN(d.getTime()));
+  if (!dates.length) return new Date();
+  return new Date(Math.max(...dates.map((d) => d.getTime())));
+}
+
 function computeCashSnapshot() {
-  const cutoff = new Date();
+  const cutoff = latestDataDate();
   cutoff.setDate(cutoff.getDate() - 90);
   const revenue = revenueData
     .filter((r) => new Date(r.date) >= cutoff)
@@ -501,7 +525,7 @@ function computeCashSnapshot() {
 }
 
 function computeRunRate() {
-  const cutoff = new Date();
+  const cutoff = latestDataDate();
   cutoff.setDate(cutoff.getDate() - 30);
   const total = expenseData
     .filter((e) => new Date(e.date) >= cutoff)
