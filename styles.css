@@ -48,6 +48,11 @@ body {
   color: var(--accent-strong);
 }
 
+.brand img {
+  height: 32px;
+  width: auto;
+}
+
 .nav {
   display: flex;
   gap: 8px;
