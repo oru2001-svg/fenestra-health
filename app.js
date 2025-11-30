@@ -15,6 +15,25 @@ function showPanel(id) {
 
 navLinks.forEach((link) => link.addEventListener('click', () => showPanel(link.dataset.target)));
 
+const INSTANT_DB_APP_ID = '408eaba0-832e-474b-87fc-c2deb7861fd2';
+const INSTANT_DB_API = 'https://api.instantdb.com/v1/query';
+
+async function runSQL(sql) {
+  const response = await fetch(INSTANT_DB_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ appId: INSTANT_DB_APP_ID, sql }),
+  });
+  if (!response.ok) {
+    throw new Error(`InstantDB error ${response.status}`);
+  }
+  const payload = await response.json();
+  if (!payload?.rows) {
+    throw new Error('InstantDB response missing rows');
+  }
+  return payload.rows;
+}
+
 async function loadCSV(path) {
   const response = await fetch(path);
   const text = await response.text();
@@ -22,7 +41,7 @@ async function loadCSV(path) {
   const keys = header.split(',');
   return rows.map((row) => {
     const values = row.split(',');
-    return Object.fromEntries(keys.map((key, i) => [key.trim(), values[i].trim()]));
+    return Object.fromEntries(keys.map((key, i) => [key.trim(), values[i]?.trim?.() ?? '']));
   });
 }
 
@@ -43,16 +62,25 @@ function startOfMonth(date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
-function periodRange(period) {
-  const now = new Date();
-  const config = periodConfig[period];
-  if (period === 'month') {
-    const start = new Date(now.getFullYear(), now.getMonth() - config.monthsBack, 1);
+function periodRange(period, dataDates = []) {
+  const dates = dataDates.filter((d) => !Number.isNaN(d?.getTime?.()));
+  if (!dates.length) {
+    const now = new Date();
+    const config = periodConfig[period];
+    if (period === 'month') {
+      const start = new Date(now.getFullYear(), now.getMonth() - config.monthsBack, 1);
+      return { start, end: now };
+    }
+    const span = config.spanDays;
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - span);
     return { start, end: now };
   }
-  const span = config.spanDays;
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - span);
-  return { start, end: now };
+
+  const minDate = new Date(Math.min(...dates.map((d) => d.getTime())));
+  const maxDate = new Date(Math.max(...dates.map((d) => d.getTime())));
+  const start = bucketStart(minDate, period);
+  const end = bucketStart(maxDate, period);
+  return { start, end };
 }
 
 function bucketStart(date, period) {
@@ -74,7 +102,13 @@ function formatLabel(period, date) {
 }
 
 function aggregateSeries(data, { period, dateKey = 'date', valueKey = 'value', seriesKey = 'series' }) {
-  const { start, end } = periodRange(period);
+  const parsed = data
+    .map((row) => ({ ...row, _date: new Date(row[dateKey]) }))
+    .filter((row) => !Number.isNaN(row._date.getTime()));
+  const { start, end } = periodRange(
+    period,
+    parsed.map((row) => row._date)
+  );
   const buckets = [];
   let cursor = bucketStart(start, period);
   while (cursor <= end) {
@@ -83,11 +117,11 @@ function aggregateSeries(data, { period, dateKey = 'date', valueKey = 'value', s
   }
 
   const bucketIndex = new Map(buckets.map((b, i) => [b.toISOString(), i]));
-  const seriesNames = Array.from(new Set(data.map((d) => d[seriesKey] || 'Value')));
+  const seriesNames = Array.from(new Set(parsed.map((d) => d[seriesKey] || 'Value')));
   const seriesData = Object.fromEntries(seriesNames.map((name) => [name, Array(buckets.length).fill(0)]));
 
-  data.forEach((row) => {
-    const date = new Date(row[dateKey]);
+  parsed.forEach((row) => {
+    const date = row._date;
     if (date < start || date > end) return;
     const key = bucketStart(date, period).toISOString();
     const idx = bucketIndex.get(key);
@@ -229,6 +263,225 @@ let expenseData = [];
 let profitabilityData = { procedure: [], physician: [] };
 let optimizeTrend = [];
 
+function normalizeDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+async function loadDataFromInstantDB() {
+  const revenueQuery = `
+    SELECT
+      Date_of_Service AS date,
+      Line_of_Business AS type,
+      SUM(Total_Payment) AS amount
+    FROM synthetic_claims_fp_twofac_twoprov
+    GROUP BY 1, 2
+    ORDER BY 1
+  `;
+
+  const expenseQuery = `
+    SELECT
+      Date AS date,
+      Category AS category,
+      SUM(-Value) AS amount
+    FROM general_ledger_family_practice_twoprov_clean
+    WHERE Category IN ('Expense', 'COGS')
+    GROUP BY 1, 2
+    ORDER BY 1
+  `;
+
+  const procedureQuery = `
+    SELECT
+      CPT_Code AS name,
+      COUNT(*) AS volume,
+      SUM(Total_Payment) AS revenue
+    FROM synthetic_claims_fp_twofac_twoprov
+    GROUP BY 1
+    ORDER BY 3 DESC
+    LIMIT 12
+  `;
+
+  const physicianRevenueQuery = `
+    SELECT
+      Provider_Name AS name,
+      SUM(Total_Payment) AS revenue,
+      COUNT(*) AS visits
+    FROM synthetic_claims_fp_twofac_twoprov
+    GROUP BY 1
+  `;
+
+  const physicianExpenseQuery = `
+    SELECT
+      COALESCE(Provider, 'Unassigned') AS name,
+      SUM(-Value) AS expense
+    FROM general_ledger_family_practice_twoprov_clean
+    WHERE Category IN ('Expense', 'COGS')
+    GROUP BY 1
+  `;
+
+  const utilizationQuery = `
+    SELECT
+      Date_of_Service AS date,
+      COUNT(DISTINCT VisitID) AS visits,
+      SUM(Total_Payment) AS payments
+    FROM synthetic_claims_fp_twofac_twoprov
+    GROUP BY 1
+    ORDER BY 1
+  `;
+
+  const [revenueRows, expenseRows, procedureRows, physicianRevenueRows, physicianExpenseRows, utilizationRows] =
+    await Promise.all([
+      runSQL(revenueQuery),
+      runSQL(expenseQuery),
+      runSQL(procedureQuery),
+      runSQL(physicianRevenueQuery),
+      runSQL(physicianExpenseQuery),
+      runSQL(utilizationQuery),
+    ]);
+
+  const totalVisits = utilizationRows.reduce((sum, row) => sum + Number(row.visits || 0), 0);
+  const totalExpenses = physicianExpenseRows.reduce((sum, row) => sum + Number(row.expense || 0), 0);
+  const avgExpensePerVisit = totalVisits ? totalExpenses / totalVisits : 0;
+  const expenseByPhysician = new Map(
+    physicianExpenseRows.map((row) => [row.name || 'Unassigned', Number(row.expense || 0)])
+  );
+
+  revenueData = revenueRows
+    .map((row) => ({
+      date: normalizeDate(row.date),
+      amount: Number(row.amount || 0),
+      type: row.type || 'Claims',
+    }))
+    .filter((row) => row.date);
+
+  expenseData = expenseRows
+    .map((row) => ({
+      date: normalizeDate(row.date),
+      category: row.category || 'Expense',
+      amount: Number(row.amount || 0),
+    }))
+    .filter((row) => row.date);
+
+  optimizeTrend = utilizationRows
+    .flatMap((row) => {
+      const date = normalizeDate(row.date);
+      if (!date) return [];
+      const visits = Number(row.visits || 0);
+      const payments = Number(row.payments || 0);
+      return [
+        { date, metric: 'Capacity', value: visits },
+        { date, metric: 'Utilization', value: visits ? payments / visits : 0 },
+      ];
+    })
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  profitabilityData = {
+    procedure: procedureRows.map((row) => ({
+      name: row.name || 'Unspecified CPT',
+      revenue: Number(row.revenue || 0),
+      expense: Number(row.volume || 0) * avgExpensePerVisit,
+    })),
+    physician: physicianRevenueRows.map((row) => {
+      const name = row.name || 'Unassigned';
+      const visits = Number(row.visits || 0);
+      const expense = expenseByPhysician.get(name) ?? avgExpensePerVisit * visits;
+      return {
+        name,
+        revenue: Number(row.revenue || 0),
+        expense,
+      };
+    }),
+  };
+}
+
+async function loadFallbackFromCSV() {
+  const [ledger, claims] = await Promise.all([
+    loadCSV('data/general_ledger_family_practice_twoprov_clean.csv'),
+    loadCSV('data/synthetic_claims_fp_twofac_twoprov.csv'),
+  ]);
+
+  const normalizeNumber = (value) => Number(String(value).replace(/[^0-9.-]/g, '')) || 0;
+  revenueData = claims
+    .map((row) => ({
+      date: normalizeDate(row.Date_of_Service),
+      type: row.Line_of_Business || 'Claims',
+      amount: normalizeNumber(row.Total_Payment),
+    }))
+    .filter((row) => row.date);
+
+  expenseData = ledger
+    .filter((row) => ['Expense', 'COGS'].includes(row.Category))
+    .map((row) => ({
+      date: normalizeDate(row.Date),
+      category: row.Category,
+      amount: Math.abs(normalizeNumber(row.Value)),
+    }))
+    .filter((row) => row.date);
+
+  const visitsByDate = new Map();
+  claims.forEach((row) => {
+    const date = normalizeDate(row.Date_of_Service);
+    if (!date) return;
+    const payments = normalizeNumber(row.Total_Payment);
+    visitsByDate.set(date, {
+      visits: (visitsByDate.get(date)?.visits || 0) + 1,
+      payments: (visitsByDate.get(date)?.payments || 0) + payments,
+    });
+  });
+  optimizeTrend = Array.from(visitsByDate.entries()).flatMap(([date, { visits, payments }]) => [
+    { date, metric: 'Capacity', value: visits },
+    { date, metric: 'Utilization', value: visits ? payments / visits : 0 },
+  ]);
+
+  const totalVisits = claims.length || 1;
+  const totalExpenses = ledger
+    .filter((row) => ['Expense', 'COGS'].includes(row.Category))
+    .reduce((sum, row) => sum + Math.abs(normalizeNumber(row.Value)), 0);
+  const avgExpensePerVisit = totalExpenses / totalVisits;
+
+  const expensesByProvider = ledger
+    .filter((row) => ['Expense', 'COGS'].includes(row.Category))
+    .reduce((acc, row) => {
+      const name = row.Provider || 'Unassigned';
+      acc.set(name, (acc.get(name) || 0) + Math.abs(normalizeNumber(row.Value)));
+      return acc;
+    }, new Map());
+
+  const procedures = claims.reduce((acc, row) => {
+    const key = row.CPT_Code || 'Unspecified CPT';
+    const payment = normalizeNumber(row.Total_Payment);
+    const prev = acc.get(key) || { revenue: 0, volume: 0 };
+    acc.set(key, { revenue: prev.revenue + payment, volume: prev.volume + 1 });
+    return acc;
+  }, new Map());
+
+  profitabilityData = {
+    procedure: Array.from(procedures.entries())
+      .map(([name, info]) => ({
+        name,
+        revenue: info.revenue,
+        expense: info.volume * avgExpensePerVisit,
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 12),
+    physician: Object.values(
+      claims.reduce((acc, row) => {
+        const name = row.Provider_Name || 'Unassigned';
+        const payment = normalizeNumber(row.Total_Payment);
+        if (!acc[name]) acc[name] = { name, revenue: 0, visits: 0 };
+        acc[name].revenue += payment;
+        acc[name].visits += 1;
+        return acc;
+      }, {})
+    ).map((row) => ({
+      name: row.name,
+      revenue: row.revenue,
+      expense: expensesByProvider.get(row.name) || row.visits * avgExpensePerVisit,
+    })),
+  };
+}
+
 function buildMarginRows() {
   const revenueByDate = new Map();
   revenueData.forEach((r) => {
@@ -250,8 +503,17 @@ function buildMarginRows() {
   }));
 }
 
+function latestDataDate() {
+  const dates = [
+    ...revenueData.map((r) => new Date(r.date)),
+    ...expenseData.map((e) => new Date(e.date)),
+  ].filter((d) => !Number.isNaN(d.getTime()));
+  if (!dates.length) return new Date();
+  return new Date(Math.max(...dates.map((d) => d.getTime())));
+}
+
 function computeCashSnapshot() {
-  const cutoff = new Date();
+  const cutoff = latestDataDate();
   cutoff.setDate(cutoff.getDate() - 90);
   const revenue = revenueData
     .filter((r) => new Date(r.date) >= cutoff)
@@ -263,7 +525,7 @@ function computeCashSnapshot() {
 }
 
 function computeRunRate() {
-  const cutoff = new Date();
+  const cutoff = latestDataDate();
   cutoff.setDate(cutoff.getDate() - 30);
   const total = expenseData
     .filter((e) => new Date(e.date) >= cutoff)
@@ -342,15 +604,6 @@ function renderOptimize(period) {
   });
 }
 
-async function loadProfitability() {
-  const data = await loadCSV('data/profitability.csv');
-  profitabilityData = {
-    procedure: data.filter((d) => d.view === 'procedure'),
-    physician: data.filter((d) => d.view === 'physician'),
-  };
-  renderProfitability();
-}
-
 function renderProfitability() {
   const rows = profitabilityData[profitabilityMode];
   document.getElementById('profitability-title').textContent =
@@ -364,18 +617,50 @@ toggleButton.addEventListener('click', () => {
   renderProfitability();
 });
 
-async function loadOptimizeList() {
-  const ideas = await loadCSV('data/optimize.csv');
-  const suggestions = ideas.map((idea) => `${idea.action} — expected lift ${idea.lift}%`);
-  renderList('optimize-list', suggestions);
+function renderOptimizeIdeas() {
+  const ideas = [];
+
+  const topProcedure = profitabilityData.procedure[0];
+  if (topProcedure) {
+    ideas.push(
+      `Promote ${topProcedure.name} to lift revenue; avg margin ${currency(
+        Number(topProcedure.revenue) - Number(topProcedure.expense)
+      )}`
+    );
+  }
+
+  const topPhysician = [...profitabilityData.physician].sort(
+    (a, b) => Number(b.revenue) - Number(a.revenue)
+  )[0];
+  if (topPhysician) {
+    ideas.push(
+      `Double down on ${topPhysician.name}'s schedule — ${currency(topPhysician.revenue)} collected with margin ${currency(
+        Number(topPhysician.revenue) - Number(topPhysician.expense)
+      )}`
+    );
+  }
+
+  const avgCapacity = optimizeTrend
+    .filter((row) => row.metric === 'Capacity')
+    .reduce((sum, row) => sum + Number(row.value || 0), 0);
+  const avgUtilization = optimizeTrend
+    .filter((row) => row.metric === 'Utilization')
+    .reduce((sum, row) => sum + Number(row.value || 0), 0);
+  if (avgCapacity && avgUtilization) {
+    const utilizationRate = avgUtilization / (optimizeTrend.length / 2 || 1);
+    ideas.push(`Target +10% visit slots to match utilization trend (${utilizationRate.toFixed(1)} per visit).`);
+  }
+
+  renderList('optimize-list', ideas);
 }
 
 async function init() {
-  [revenueData, expenseData, optimizeTrend] = await Promise.all([
-    loadCSV('data/revenue.csv'),
-    loadCSV('data/expenses.csv'),
-    loadCSV('data/optimize_trend.csv'),
-  ]);
+  try {
+    await loadDataFromInstantDB();
+  } catch (error) {
+    console.warn('InstantDB unavailable, using CSV fallback', error);
+    await loadFallbackFromCSV();
+  }
 
   setupToggle('overview-toggle', renderOverview, 'month');
   setupToggle('revenue-toggle', renderRevenue, 'month');
@@ -383,8 +668,8 @@ async function init() {
   setupToggle('optimize-toggle', renderOptimize, 'week');
 
   renderRevenueMix();
-  loadProfitability();
-  loadOptimizeList();
+  renderProfitability();
+  renderOptimizeIdeas();
 }
 
 init();
